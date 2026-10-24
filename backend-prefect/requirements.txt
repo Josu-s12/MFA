@@ -6,3 +6,4 @@ qrcode[pil]
 pytest
 httpx
 python-dotenv
+cryptography

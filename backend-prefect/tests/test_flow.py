@@ -4,7 +4,10 @@ import tempfile
 from pathlib import Path
 
 os.environ["SUPABASE_URL"] = ""  # los tests usan SQLite, nunca Supabase
+from cryptography.fernet import Fernet
+os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
 os.environ["MFA_DB"] = str(Path(tempfile.mkdtemp()) / "test.db")
+os.environ["PREFECT_API_URL"] = ""  # tests con servidor efímero, sin depender del Prefect del usuario
 os.environ.setdefault("PREFECT_SERVER_ALLOW_EPHEMERAL_MODE", "true")
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 

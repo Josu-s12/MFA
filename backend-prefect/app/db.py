@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import httpx
+from cryptography.fernet import Fernet
 
 try:  # carga backend-prefect/.env si existe
     from dotenv import load_dotenv
@@ -25,6 +26,28 @@ DB_PATH = Path(os.environ.get("MFA_DB", Path(__file__).resolve().parent.parent /
 
 class UserExists(Exception):
     pass
+
+
+# La semilla TOTP no se puede hashear (el servidor necesita el valor original para el HMAC):
+# se cifra con Fernet y la clave vive fuera de la base de datos (.env).
+_ENC_PREFIX = "enc:"
+
+
+def _fernet() -> Fernet:
+    key = os.environ.get("ENCRYPTION_KEY")
+    if not key:
+        raise RuntimeError("Falta ENCRYPTION_KEY en .env")
+    return Fernet(key.encode())
+
+
+def encrypt_secret(secret: str) -> str:
+    return _ENC_PREFIX + _fernet().encrypt(secret.encode()).decode()
+
+
+def decrypt_secret(stored: str) -> str:
+    if not stored.startswith(_ENC_PREFIX):  # semilla antigua sin cifrar
+        return stored
+    return _fernet().decrypt(stored[len(_ENC_PREFIX):].encode()).decode()
 
 
 def hash_password(password: str, salt: bytes | None = None) -> str:
@@ -112,13 +135,18 @@ def get_username(user_id: int) -> str:
 def get_mfa(user_id: int):
     if USE_SUPABASE:
         rows = _rest("GET", "mfa_config", params={"user_id": f"eq.{user_id}", "select": "secret,state"})
-        return rows[0] if rows else None
-    with _conn() as c:
-        row = c.execute("SELECT secret, state FROM mfa_config WHERE user_id=?", (user_id,)).fetchone()
-    return dict(row) if row else None
+        row = rows[0] if rows else None
+    else:
+        with _conn() as c:
+            r = c.execute("SELECT secret, state FROM mfa_config WHERE user_id=?", (user_id,)).fetchone()
+        row = dict(r) if r else None
+    if row:
+        row["secret"] = decrypt_secret(row["secret"])
+    return row
 
 
 def upsert_mfa(user_id: int, secret: str, state: str):
+    secret = encrypt_secret(secret)
     if USE_SUPABASE:
         _rest("POST", "mfa_config", params={"on_conflict": "user_id"},
               json={"user_id": user_id, "secret": secret, "state": state},
