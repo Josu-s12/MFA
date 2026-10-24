@@ -90,8 +90,12 @@ def setup_2fa(claims: dict = Depends(claims_for("pre_auth"))):
     if mfa_state(user_id) == db.ACTIVE:
         raise HTTPException(409, "2FA ya está ACTIVE")
     username = db.get_username(user_id)
-    secret = totp.generate_secret()
-    db.upsert_mfa(user_id, secret, db.PENDING_VERIFICATION)
+    existing = db.get_mfa(user_id)
+    if existing and existing["state"] == db.PENDING_VERIFICATION:
+        secret = existing["secret"]  # idempotente: no cambiar la semilla si ya escaneaste el QR
+    else:
+        secret = totp.generate_secret()
+        db.upsert_mfa(user_id, secret, db.PENDING_VERIFICATION)
     uri = totp.provisioning_uri(secret, username)
     buf = io.BytesIO()
     qrcode.make(uri).save(buf, format="PNG")
