@@ -8,7 +8,7 @@ import qrcode
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from . import db, flows, security, totp
 
@@ -30,6 +30,11 @@ class Credentials(BaseModel):
 class CodeBody(BaseModel):
     code: str
     method: str = "totp"  # "totp" | "backup"
+
+    @field_validator("code")
+    @classmethod
+    def _strip_spaces(cls, v: str) -> str:
+        return "".join(v.split())  # acepta "263 817"
 
 
 def claims_for(scope: str):
