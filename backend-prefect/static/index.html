@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Login 2FA</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:460px;margin:2rem auto;padding:0 1rem;color:#222}
+input,button{font:inherit;padding:.5rem;margin:.25rem 0;width:100%;box-sizing:border-box}
+button{cursor:pointer}.card{border:1px solid #ddd;border-radius:8px;padding:1rem;margin:1rem 0}
+pre{background:#f4f4f4;padding:.5rem;white-space:pre-wrap;word-break:break-all}.err{color:#b00020}.ok{color:#0a7a2f}
+</style></head><body>
+<h2>Login con 2FA (TOTP)</h2>
+<div class="card" id="s1">
+  <b>Paso 1: usuario y contraseña</b>
+  <input id="u" placeholder="usuario"><input id="p" type="password" placeholder="contraseña">
+  <button onclick="login()">Entrar</button>
+  <button onclick="register()">Registrar usuario</button>
+</div>
+<div class="card" id="setup" hidden>
+  <b>Activar 2FA</b> (estado: PENDING_VERIFICATION)
+  <button onclick="setup()">Generar QR</button>
+  <img id="qr" style="max-width:100%" hidden><pre id="secret"></pre>
+  <input id="c0" placeholder="Código de 6 dígitos de tu app"><button onclick="activate()">Activar</button>
+</div>
+<div class="card" id="s2" hidden>
+  <b>Paso 2: segundo factor</b>
+  <input id="c" placeholder="Código de 6 dígitos o de respaldo" inputmode="numeric">
+  <select id="m"><option value="totp">TOTP</option><option value="backup">Código de respaldo</option></select>
+  <button onclick="verify()">Verificar</button>
+</div>
+<div class="card" id="vault" hidden><button onclick="vault()">GET /api/boveda-secreta</button></div>
+<pre id="out"></pre>
+<script>
+let pre=null, access=null;
+const $=id=>document.getElementById(id), show=(id,v=true)=>$(id).hidden=!v;
+function log(t,ok=true){$('out').className=ok?'ok':'err';$('out').textContent=typeof t==='string'?t:JSON.stringify(t,null,2)}
+async function api(path,body,token){
+  const r=await fetch(path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},body:body?JSON.stringify(body):undefined});
+  const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(r.status+' '+(j.detail||'error')); return j;
+}
+const cred=()=>({username:$('u').value,password:$('p').value});
+async function register(){try{await api('/auth/register',cred());log('Usuario creado, ahora entra')}catch(e){log(e.message,false)}}
+async function login(){try{const j=await api('/auth/login',cred());pre=j.pre_auth_token;
+  if(j.mfa_state==='ACTIVE'){show('s2');show('setup',false)}else{show('setup');show('s2',false)}
+  log('pre_auth_token recibido (estado 2FA: '+j.mfa_state+')')}catch(e){log(e.message,false)}}
+async function setup(){try{const j=await api('/auth/2fa/setup',{},pre);$('qr').src='data:image/png;base64,'+j.qr_png_base64;show('qr');
+  $('secret').textContent='Semilla Base32: '+j.secret;log('Estado: '+j.state)}catch(e){log(e.message,false)}}
+async function activate(){try{const j=await api('/auth/2fa/activate',{code:$('c0').value},pre);access=j.access_token;
+  show('vault');log({estado:j.state,guarda_estos_codigos_de_respaldo:j.backup_codes})}catch(e){log(e.message,false)}}
+async function verify(){try{const j=await api('/auth/verify-2fa',{code:$('c').value,method:$('m').value},pre);access=j.access_token;
+  show('vault');log('Acceso concedido (mfa_verified=true)')}catch(e){log(e.message,false)}}
+async function vault(){try{log(await api('/api/boveda-secreta',null,access))}catch(e){log(e.message,false)}}
+</script></body></html>

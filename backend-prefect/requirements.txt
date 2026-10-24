@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+prefect>=3
+PyJWT
+qrcode[pil]
+pytest
+httpx
+python-dotenv
